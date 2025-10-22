@@ -7,6 +7,7 @@ pub use take::*;
 pub mod intialize;
 pub use intialize::*;
 
+// #[repr(u8)]
 pub enum FundraisingInstructions {
     Initialize = 0,
     Contribute = 1,

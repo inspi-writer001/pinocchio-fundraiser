@@ -8,7 +8,7 @@ mod tests;
 
 entrypoint!(process_instruction);
 
-pinocchio_pubkey::declare_id!("3Mt3ha5XTJHxSjx15BrvjqoW9NUHSqBTbobHqTihrCux");
+pinocchio_pubkey::declare_id!("27abzM8KfWuiYyiy6T3Dv1EeJWSPuBK7DDjtBQoapEfP");
 
 pub fn process_instruction(
     program_id: &Pubkey,
@@ -22,10 +22,13 @@ pub fn process_instruction(
         .ok_or(pinocchio::program_error::ProgramError::InvalidInstructionData)?;
 
     match FundraisingInstructions::try_from(discriminator)? {
-        FundraisingInstructions::Initialize => {}
-        FundraisingInstructions::Contribute => {}
-        FundraisingInstructions::CheckContributions => {}
-        FundraisingInstructions::Refund => {}
+        FundraisingInstructions::Initialize => {
+            pinocchio_log::log!("got to entry");
+            instructions::process_intialize_fundraiser(accounts, data)?
+        }
+        // FundraisingInstructions::Contribute => {}
+        // FundraisingInstructions::CheckContributions => {}
+        // FundraisingInstructions::Refund => {}
         // FundraisingInstructions::MakeV2 => instructions::process_make_instruction_v2(accounts, data)?,
         _ => return Err(pinocchio::program_error::ProgramError::InvalidInstructionData),
     }
