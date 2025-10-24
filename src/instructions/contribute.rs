@@ -27,6 +27,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
     assert!(&contributor.is_signer(), "Conributor should be a signer");
 
     // check that this program owns fundraiser ✅
+
     assert!(
         &fundraiser.is_owned_by(&crate::ID),
         "User derived Wrong Fundraiser we do not own"
@@ -36,13 +37,14 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
     let data = &mut fundraiser.try_borrow_mut_data()?;
     let fundraiser_state = &mut bytemuck::from_bytes_mut::<Fundraiser>(data);
 
+    pinocchio_log::log!("testing this fundraiser state assert 🔥");
     // check that the mint is correct in fundraiser field ✅
     assert_eq!(
         mint.key(),
         &fundraiser_state.mint_to_raise,
         "User Provided Wrong Mint"
     );
-
+    pinocchio_log::log!("did not fail at fundraiser state check 🔥🔥");
     // check that provided vault is owned by fundraiser state
     let vault_state = pinocchio_token::state::TokenAccount::from_account_info(&vault)?;
     assert_eq!(
@@ -51,9 +53,12 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         "Illegal Owner of Vault"
     );
 
+    pinocchio_log::log!("did not fail at vault_state check 🔥🔥");
     // check that contributor has suffifient amount to transfer
     let contributor_ata_state =
-        pinocchio_token::state::TokenAccount::from_account_info(&*contributor_ata)?;
+        pinocchio_token::state::TokenAccount::from_account_info(&contributor_ata)?;
+
+    pinocchio_log::log!("user amount: {}", contributor_ata_state.amount());
 
     assert!(
         contributor_ata_state.amount() >= u64::from_le_bytes(amount.try_into().unwrap()),
@@ -71,6 +76,8 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         u64::from_le_bytes(amount.try_into().unwrap()) <= fundraiser_state.max_sendable(),
         "Insufficient amount to send"
     );
+
+    pinocchio_log::log!("did not fail at insufficient checks 🔥");
 
     // create contributor pda if it's not initialized [init-if-needed]
     let contributor_seeds: &[&[u8]] = &[b"contributor", contributor.key()];
@@ -95,6 +102,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
             Seed::from(&bump),
         ];
         let seeds = Signer::from(&seed);
+
         CreateAccount {
             from: contributor,
             lamports: Rent::get()?.minimum_balance(Contributor::LEN),
@@ -103,7 +111,10 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
             to: fundraiser,
         }
         .invoke_signed(&[seeds])?;
+
+        pinocchio_log::log!("did not fail at this create 🔥🔥");
         // deposit to the vault
+
         Transfer {
             amount: u64::from_le_bytes(amount.try_into().unwrap()),
             authority: contributor,
@@ -113,6 +124,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         .invoke()?;
 
         // increase contributor amount by how much was deposited
+
         let data = &mut contributor.try_borrow_mut_data()?;
         let derived_contributor_pda_state = bytemuck::from_bytes_mut::<Contributor>(data);
 
@@ -126,7 +138,19 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         let derived_contributor_pda_state = bytemuck::from_bytes_mut::<Contributor>(data);
 
         // deposit to the vault
+        Transfer {
+            amount: u64::from_le_bytes(amount.try_into().unwrap()),
+            authority: contributor,
+            from: contributor_ata,
+            to: vault,
+        }
+        .invoke()?;
+
         // increase contributor amount by how much was deposited
+        derived_contributor_pda_state.amount =
+            (u64::from_le_bytes(derived_contributor_pda_state.amount)
+                + u64::from_le_bytes(amount.try_into().unwrap()))
+            .to_le_bytes()
     }
 
     Ok(())

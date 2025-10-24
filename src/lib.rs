@@ -26,7 +26,7 @@ pub fn process_instruction(
             pinocchio_log::log!("got to entry");
             instructions::process_intialize_fundraiser(accounts, data)?
         }
-        // FundraisingInstructions::Contribute => {}
+        FundraisingInstructions::Contribute => instructions::process_contribute(accounts, data)?,
         // FundraisingInstructions::CheckContributions => {}
         // FundraisingInstructions::Refund => {}
         // FundraisingInstructions::MakeV2 => instructions::process_make_instruction_v2(accounts, data)?,
