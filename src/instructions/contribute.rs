@@ -33,49 +33,52 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         "User derived Wrong Fundraiser we do not own"
     );
 
-    // check that fundraiser exists ✅
-    let data = &mut fundraiser.try_borrow_mut_data()?;
-    let fundraiser_state = &mut bytemuck::from_bytes_mut::<Fundraiser>(data);
+    {
+        // check that fundraiser exists ✅
+        let data = &mut fundraiser.try_borrow_mut_data()?;
+        let fundraiser_state = &mut bytemuck::from_bytes_mut::<Fundraiser>(data);
 
-    pinocchio_log::log!("testing this fundraiser state assert 🔥");
-    // check that the mint is correct in fundraiser field ✅
-    assert_eq!(
-        mint.key(),
-        &fundraiser_state.mint_to_raise,
-        "User Provided Wrong Mint"
-    );
-    pinocchio_log::log!("did not fail at fundraiser state check 🔥🔥");
-    // check that provided vault is owned by fundraiser state
-    let vault_state = pinocchio_token::state::TokenAccount::from_account_info(&vault)?;
-    assert_eq!(
-        vault_state.owner(),
-        fundraiser.key(),
-        "Illegal Owner of Vault"
-    );
+        pinocchio_log::log!("testing this fundraiser state assert 🔥");
+        // check that the mint is correct in fundraiser field ✅
+        assert_eq!(
+            mint.key(),
+            &fundraiser_state.mint_to_raise,
+            "User Provided Wrong Mint"
+        );
+        pinocchio_log::log!("did not fail at fundraiser state check 🔥🔥");
+        // check that provided vault is owned by fundraiser state
+        let vault_state = pinocchio_token::state::TokenAccount::from_account_info(&vault)?;
+        assert_eq!(
+            vault_state.owner(),
+            fundraiser.key(),
+            "Illegal Owner of Vault"
+        );
 
-    pinocchio_log::log!("did not fail at vault_state check 🔥🔥");
-    // check that contributor has suffifient amount to transfer
-    let contributor_ata_state =
-        pinocchio_token::state::TokenAccount::from_account_info(&contributor_ata)?;
+        pinocchio_log::log!("did not fail at vault_state check 🔥🔥");
+        // check that contributor has suffifient amount to transfer
 
-    pinocchio_log::log!("user amount: {}", contributor_ata_state.amount());
+        let contributor_ata_state =
+            pinocchio_token::state::TokenAccount::from_account_info(&contributor_ata)?;
 
-    assert!(
-        contributor_ata_state.amount() >= u64::from_le_bytes(amount.try_into().unwrap()),
-        "Insufficient amount to send"
-    );
+        pinocchio_log::log!("user amount: {}", contributor_ata_state.amount());
 
-    // check that contributor is sending above minimum
-    assert!(
-        u64::from_le_bytes(amount.try_into().unwrap()) >= fundraiser_state.min_sendable(),
-        "Insufficient amount to send"
-    );
+        assert!(
+            contributor_ata_state.amount() >= u64::from_le_bytes(amount.try_into().unwrap()),
+            "Insufficient amount to send"
+        );
 
-    // check that contributor is sending below maximum
-    assert!(
-        u64::from_le_bytes(amount.try_into().unwrap()) <= fundraiser_state.max_sendable(),
-        "Insufficient amount to send"
-    );
+        // check that contributor is sending above minimum
+        assert!(
+            u64::from_le_bytes(amount.try_into().unwrap()) >= fundraiser_state.min_sendable(),
+            "Insufficient amount to send"
+        );
+
+        // check that contributor is sending below maximum
+        assert!(
+            u64::from_le_bytes(amount.try_into().unwrap()) <= fundraiser_state.max_sendable(),
+            "Insufficient amount to send"
+        );
+    }
 
     pinocchio_log::log!("did not fail at insufficient checks 🔥");
 
@@ -97,7 +100,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         let initial_bump = bump.to_le();
         let bump = [initial_bump];
         let seed = [
-            Seed::from(b"fundraiser"),
+            Seed::from(b"contributor"),
             Seed::from(contributor.key()),
             Seed::from(&bump),
         ];
@@ -108,7 +111,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
             lamports: Rent::get()?.minimum_balance(Contributor::LEN),
             owner: &crate::ID,
             space: Contributor::LEN as u64,
-            to: fundraiser,
+            to: contributor_pda,
         }
         .invoke_signed(&[seeds])?;
 
@@ -125,7 +128,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
 
         // increase contributor amount by how much was deposited
 
-        let data = &mut contributor.try_borrow_mut_data()?;
+        let data = &mut contributor_pda.try_borrow_mut_data()?;
         let derived_contributor_pda_state = bytemuck::from_bytes_mut::<Contributor>(data);
 
         derived_contributor_pda_state.amount =
@@ -134,7 +137,7 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
             .to_le_bytes()
     } else {
         // Account exists - deserialize it
-        let data = &mut contributor.try_borrow_mut_data()?;
+        let data = &mut contributor_pda.try_borrow_mut_data()?;
         let derived_contributor_pda_state = bytemuck::from_bytes_mut::<Contributor>(data);
 
         // deposit to the vault
