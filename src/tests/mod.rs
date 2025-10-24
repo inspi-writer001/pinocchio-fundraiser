@@ -268,13 +268,20 @@ mod tests {
 
         assert_eq!(program_id, PROGRAM_ID);
         create_fundraiser(&mut svm, &state).unwrap();
-        contribute(&mut svm, &state).unwrap();
+        contribute(&mut svm, &state).unwrap(); // user 1 contributes
+        contribute(&mut svm, &state).unwrap(); // user 2 contributes
+        contribute(&mut svm, &state).unwrap(); // user 3 contributes
 
         let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
 
         let maker_deserialized_ata =
             bytemuck::try_from_bytes::<crate::state::Fundraiser>(&fundraiser_state.data).unwrap();
-        // spl_token::state::Account::unpack(fundraiser_state.data.as_slice()).unwrap();
+
+        let vault_in_program = svm.get_account(&state.vault).unwrap();
+        let vault_as_account =
+            litesvm_token::spl_token::state::Account::unpack(&vault_in_program.data).unwrap();
+
+        msg!("new vault balance: {:#?}", vault_as_account.amount);
         msg!(
             "new user token bump: {:#?}",
             maker_deserialized_ata.amount_to_raise
