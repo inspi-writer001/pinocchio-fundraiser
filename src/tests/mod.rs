@@ -1,4 +1,4 @@
-use crate::instructions::Fundraiser;
+use crate::state::Fundraiser;
 
 #[cfg(test)]
 mod tests {
@@ -23,7 +23,7 @@ mod tests {
     use solana_transaction::Transaction;
     use spl_associated_token_account::solana_program::program_pack::Pack;
 
-    use crate::instructions::{Fundraiser, InitializeFundraiser};
+    use crate::instructions::InitializeFundraiser;
 
     const PROGRAM_ID: Pubkey = Pubkey::new_from_array(crate::ID); //"CntDHuHyUa1sEyLEYoHbrYdzM2G4VeDHSdQjQXXdRh6E";
     const TOKEN_PROGRAM_ID: Pubkey = spl_token::ID;
@@ -252,40 +252,11 @@ mod tests {
         let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
 
         let maker_deserialized_ata =
-            bytemuck::try_from_bytes::<crate::instructions::Fundraiser>(&fundraiser_state.data)
-                .unwrap();
+            bytemuck::try_from_bytes::<crate::state::Fundraiser>(&fundraiser_state.data).unwrap();
         // spl_token::state::Account::unpack(fundraiser_state.data.as_slice()).unwrap();
         msg!(
             "new user token bump: {:#?}",
             maker_deserialized_ata.amount_to_raise
         );
     }
-
-    // #[test]
-    // pub fn test_take_instruction() {
-    //     let (mut svm, state) = setup();
-
-    //     let program_id = program_id();
-
-    //     assert_eq!(program_id, PROGRAM_ID);
-    //     make(&mut svm, &state).unwrap();
-    //     let (taker_ata_a, taker_ata_b) = take(&mut svm, &state).unwrap();
-
-    //     let taker_ata_a_from_program = svm.get_account(&taker_ata_a).unwrap();
-
-    //     let taker_deserialized_ata_a =
-    //         spl_token::state::Account::unpack(taker_ata_a_from_program.data.as_slice()).unwrap();
-    //     msg!(
-    //         "new user token_balance: {}",
-    //         taker_deserialized_ata_a.amount
-    //     );
-    //     let taker_ata_b_from_program = svm.get_account(&taker_ata_b).unwrap();
-
-    //     let taker_deserialized_ata_b =
-    //         spl_token::state::Account::unpack(taker_ata_b_from_program.data.as_slice()).unwrap();
-    //     msg!(
-    //         "new user token_balance: {}",
-    //         taker_deserialized_ata_b.amount
-    //     );
-    // }
 }

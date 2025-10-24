@@ -12,6 +12,8 @@ use pinocchio::{
 use pinocchio_pubkey::derive_address;
 use pinocchio_system::instructions::CreateAccount;
 
+use crate::state::Fundraiser;
+
 #[repr(C)]
 #[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq)]
 pub struct InitializeFundraiser {
@@ -20,26 +22,6 @@ pub struct InitializeFundraiser {
 }
 
 impl InitializeFundraiser {
-    pub fn to_bytes(&self) -> Vec<u8> {
-        bytemuck::bytes_of(self).to_vec()
-    }
-}
-
-#[repr(C)]
-#[derive(Pod, Zeroable, Clone, Copy, Debug, PartialEq)]
-pub struct Fundraiser {
-    pub maker: [u8; 32],
-    pub mint_to_raise: [u8; 32],
-    pub amount_to_raise: [u8; 8],
-    pub current_amount: [u8; 8],
-    pub time_started: [u8; 8],
-    pub duration: [u8; 8],
-    pub bump: [u8; 1],
-}
-
-impl Fundraiser {
-    const LEN: usize = core::mem::size_of::<Fundraiser>();
-
     pub fn to_bytes(&self) -> Vec<u8> {
         bytemuck::bytes_of(self).to_vec()
     }

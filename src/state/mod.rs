@@ -1,3 +1,5 @@
-pub mod escrow;
+pub mod contributor;
+pub mod fundraiser;
 
-pub use escrow::*;
+pub use contributor::*;
+pub use fundraiser::*;
