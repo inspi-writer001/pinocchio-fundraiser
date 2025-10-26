@@ -2,21 +2,19 @@ use bytemuck::{Pod, Zeroable};
 
 use pinocchio::{
     account_info::AccountInfo,
-    instruction::{Account, Seed, Signer},
-    log, msg,
-    pubkey::{self, find_program_address, log},
+    instruction::{Seed, Signer},
+    pubkey::{self, find_program_address},
     sysvars::{self, rent::Rent, Sysvar},
     ProgramResult,
 };
-// use pinocchio_log::log;
-use pinocchio_pubkey::derive_address;
+
 use pinocchio_system::instructions::CreateAccount;
 use pinocchio_token::instructions::Transfer;
 
 use crate::state::{Contributor, Fundraiser};
 
 pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
-    let [contributor, mint, fundraiser, vault, contributor_ata, contributor_pda, system_program, token_program, associated_token_program, rent_sysvar @ ..] =
+    let [contributor, mint, fundraiser, vault, contributor_ata, contributor_pda, _system_program, _token_program, _associated_token_program, _rent_sysvar @ ..] =
         accounts
     else {
         return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
@@ -35,10 +33,9 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
 
     // check that fundraiser exists ✅
     {
-        let data = &mut fundraiser.try_borrow_mut_data()?;
-        let fundraiser_state = &mut bytemuck::from_bytes_mut::<Fundraiser>(data);
+        let data = &fundraiser.try_borrow_data()?;
+        let fundraiser_state = &mut bytemuck::pod_read_unaligned::<Fundraiser>(data);
 
-        pinocchio_log::log!("testing this fundraiser state assert 🔥");
         // check that the mint is correct in fundraiser field ✅
         assert_eq!(
             mint.key(),
@@ -46,7 +43,6 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
             "User Provided Wrong Mint"
         );
 
-        pinocchio_log::log!("did not fail at fundraiser state check 🔥🔥");
         // check that provided vault is owned by fundraiser state
         let vault_state = pinocchio_token::state::TokenAccount::from_account_info(&vault)?;
         assert_eq!(
@@ -55,12 +51,9 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
             "Illegal Owner of Vault"
         );
 
-        pinocchio_log::log!("did not fail at vault_state check 🔥🔥");
         // check that contributor has suffifient amount to transfer
         let contributor_ata_state =
             pinocchio_token::state::TokenAccount::from_account_info(&contributor_ata)?;
-
-        pinocchio_log::log!("user amount: {}", contributor_ata_state.amount());
 
         assert!(
             contributor_ata_state.amount() >= u64::from_le_bytes(amount.try_into().unwrap()),
@@ -113,7 +106,6 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         }
         .invoke_signed(&[seeds])?;
 
-        pinocchio_log::log!("did not fail at this create 🔥🔥");
         // deposit to the vault
 
         Transfer {
@@ -128,15 +120,14 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
 
         let data = &mut contributor_pda.try_borrow_mut_data()?;
         let derived_contributor_pda_state = bytemuck::from_bytes_mut::<Contributor>(data);
-        pinocchio_log::log!("did not fail at bytemuck deserialization 🔥");
+
         derived_contributor_pda_state.amount =
             (u64::from_le_bytes(derived_contributor_pda_state.amount)
                 + u64::from_le_bytes(amount.try_into().unwrap()))
             .to_le_bytes()
     } else {
-        pinocchio_log::log!("hitting when account already exists 🟩🟩");
         // Account exists - deserialize it
-        let data = &mut contributor.try_borrow_mut_data()?;
+        let data = &mut contributor_pda.try_borrow_mut_data()?;
         let derived_contributor_pda_state = bytemuck::from_bytes_mut::<Contributor>(data);
 
         // deposit to the vault

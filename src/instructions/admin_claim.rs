@@ -1,150 +1,89 @@
-// use pinocchio::{
-//     account_info::AccountInfo,
-//     instruction::{Seed, Signer},
-//     msg,
-//     pubkey::{self, log},
-//     sysvars::{rent::Rent, Sysvar},
-//     ProgramResult,
-// };
-// use pinocchio_token::instructions::CloseAccount;
+use pinocchio::{
+    account_info::AccountInfo,
+    instruction::{Seed, Signer},
+    pubkey::{self, find_program_address},
+    sysvars::{self, clock::Clock, rent::Rent, Sysvar},
+    ProgramResult,
+};
 
-// use crate::state::Escrow;
+use pinocchio_system::instructions::CreateAccount;
+use pinocchio_token::instructions::Transfer;
 
-// pub fn process_take_instruction(accounts: &[AccountInfo], _data: &[u8]) -> ProgramResult {
-//     let [taker, maker, maker_ata_a, maker_ata_b, mint_a, mint_b, escrow_account, taker_ata_a, taker_ata_b, escrow_ata, _system_program, _token_program, _associated_token_program, _rent_sysvar @ ..] =
-//         accounts
-//     else {
-//         return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
-//     };
+use crate::state::{Contributor, Fundraiser};
 
-//     // check that taker is signer
+fn admin_claim(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    let [maker, mint, fundraiser, vault, maker_ata, _system_program, _token_program, _associated_token_program, _rent_sysvar @ ..] =
+        accounts
+    else {
+        return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
+    };
 
-//     // check that maker is not signer
+    // check that maker is signer
+    assert!(maker.is_signer(), "Maker should be a signer");
+    // check that fundraiser exists [ is not closed ]
+    assert!(
+        !fundraiser.data_is_empty(),
+        "Fundraiser is closed or doesn't exist"
+    );
 
-//     // check that maker and taker mints are correct
-//     let taker_token_account_a =
-//         pinocchio_token::state::TokenAccount::from_account_info(&taker_ata_a).unwrap();
-//     let maker_token_account_a =
-//         pinocchio_token::state::TokenAccount::from_account_info(&maker_ata_a).unwrap();
-//     let taker_token_account_b =
-//         pinocchio_token::state::TokenAccount::from_account_info(&taker_ata_b).unwrap();
-//     let maker_token_account_b =
-//         pinocchio_token::state::TokenAccount::from_account_info(&maker_ata_b).unwrap();
+    let fundraiser_state =
+        bytemuck::pod_read_unaligned::<Fundraiser>(&fundraiser.try_borrow_data().unwrap());
 
-//     let mint_a_account = pinocchio_token::state::Mint::from_account_info(mint_a).unwrap();
+    // check that threshold has been met [target amount has been reached]
+    let clock = Clock::get();
+    let current_time = clock?.unix_timestamp as u64;
 
-//     assert_eq!(
-//         &taker_token_account_a.mint(),
-//         &mint_a.key(),
-//         "Invalid taker_token_account_a"
-//     );
-//     assert_eq!(
-//         &maker_token_account_a.mint(),
-//         &mint_a.key(),
-//         "Invalid maker_token_account_a"
-//     );
-//     assert_eq!(
-//         &taker_token_account_b.mint(),
-//         &mint_b.key(),
-//         "Invalid taker_token_account_a"
-//     );
-//     assert_eq!(
-//         &maker_token_account_b.mint(),
-//         &mint_b.key(),
-//         "Invalid maker_token_account_a"
-//     );
+    let vault_state = pinocchio_token::state::TokenAccount::from_account_info(vault).unwrap();
 
-//     // check that maker is the owner of maker_ata provided
-//     assert_eq!(
-//         *maker_token_account_b.owner(),
-//         *maker.key(),
-//         "maker does not own this token"
-//     );
-//     assert_eq!(
-//         *maker_token_account_a.owner(),
-//         *maker.key(),
-//         "maker does not own this token"
-//     );
-//     // check that maker is the creator of the make_ix [make state] and is same in escrow
-//     let escrow_state = Escrow::from_account_info(&escrow_account).unwrap();
-//     assert_eq!(
-//         escrow_state.maker(),
-//         *maker.key(),
-//         "Wrong maker for this escrow"
-//     );
-//     // check that the escrow is owned by this program
-//     assert_eq!(
-//         escrow_account.owner(),
-//         &crate::ID,
-//         "This program does not own the escrow"
-//     );
+    assert!(
+        fundraiser_state.amount_to_raise <= u64::to_le_bytes(vault_state.amount()),
+        "You have not reached the target amount"
+    );
 
-//     // transfer token to maker_ata
+    assert!(
+        fundraiser_state.duration <= u64::to_le_bytes(current_time),
+        "Time has not passed"
+    );
 
-//     // transfer token to taker_ata
+    // check that provided mint is exactly same as in the fundraiser state
+    assert_eq!(mint.key(), &fundraiser_state.mint_to_raise, "Wrong Mint");
 
-//     // close escrow ata
-//     Ok(())
-// }
+    // check that fundraiser is authority of vault
+    assert_eq!(
+        vault_state.close_authority(),
+        Some(fundraiser.key()),
+        "Fundraiser does not own Vault"
+    );
 
-// pub fn transfer_to_maker(accounts: &[AccountInfo]) -> ProgramResult {
-//     let [taker, _maker, _maker_ata_a, maker_ata_b, _mint_a, mint_b, escrow_account, _taker_ata_a, taker_ata_b, _escrow_ata, _system_program, _token_program, _associated_token_program, _rent_sysvar @ ..] =
-//         accounts
-//     else {
-//         return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
-//     };
+    // check that vault is derived from the mint
+    assert_eq!(vault_state.mint(), mint.key(), "Vault has wrong mint");
 
-//     let escrow_state = Escrow::from_account_info(&escrow_account).unwrap();
+    // check that maker ata is of the mint address
+    let maker_ata_state =
+        pinocchio_token::state::TokenAccount::from_account_info(&maker_ata).unwrap();
+    assert_eq!(
+        maker_ata_state.mint(),
+        mint.key(),
+        "Maker ata has wrong mint"
+    );
 
-//     let mint_b_account = pinocchio_token::state::Mint::from_account_info(mint_b).unwrap();
-
-//     pinocchio_token::instructions::TransferChecked {
-//         amount: escrow_state.amount_to_receive(),
-//         authority: taker,
-//         decimals: mint_b_account.decimals(),
-//         from: taker_ata_b,
-//         mint: mint_b,
-//         to: maker_ata_b,
-//     }
-//     .invoke()?;
-//     Ok(())
-// }
-
-// pub fn transfer_to_taker(accounts: &[AccountInfo]) -> ProgramResult {
-//     let [_taker, maker, _maker_ata_a, _maker_ata_b, mint_a, _mint_b, escrow_account, taker_ata_a, _taker_ata_b, escrow_ata, _system_program, _token_program, _associated_token_program, _rent_sysvar @ ..] =
-//         accounts
-//     else {
-//         return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
-//     };
-
-//     let escrow_state = Escrow::from_account_info(&escrow_account).unwrap();
-//     let mint_a_account = pinocchio_token::state::Mint::from_account_info(mint_a).unwrap();
-//     let escrow_bump = [escrow_state.bump];
-//     pinocchio_log::log!("this is the escrow bump: {}", &escrow_bump);
-//     let seed = [
-//         Seed::from(b"escrow"),
-//         Seed::from(maker.key()),
-//         Seed::from(&escrow_bump),
-//     ];
-//     let seeds = Signer::from(&seed);
-
-//     pinocchio_token::instructions::TransferChecked {
-//         amount: escrow_state.amount_to_give(),
-//         authority: escrow_account,
-//         decimals: mint_a_account.decimals(),
-//         from: escrow_ata,
-//         mint: mint_a,
-//         to: taker_ata_a,
-//     }
-//     .invoke_signed(&[seeds])?;
-
-//     // close escrow ata
-//     CloseAccount {
-//         account: escrow_ata,
-//         authority: escrow_account,
-//         destination: maker,
-//     }
-//     .invoke_signed(&[Signer::from(&seed)])?;
-
-//     Ok(())
-// }
+    // transfer to admin
+    let initial_bump = u8::from_le_bytes(fundraiser_state.bump);
+    let bump = [initial_bump];
+    let seed = [
+        Seed::from(b"fundraiser"),
+        Seed::from(maker_ata.key()),
+        Seed::from(&bump),
+    ];
+    let seeds = Signer::from(&seed);
+    // Transfer {
+    //     amount: vault_state.amount(),
+    //     authority: fundraiser,
+    //     from: vault,
+    //     to: maker_ata,
+    // }
+    // .invoke_signed(&seeds);
+    // close vault
+    // close fundraiser account
+    Ok(())
+}

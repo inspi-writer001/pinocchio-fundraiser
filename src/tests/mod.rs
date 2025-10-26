@@ -21,7 +21,7 @@ mod tests {
     use solana_pubkey::Pubkey;
     use solana_signer::Signer;
     use solana_transaction::Transaction;
-    use spl_associated_token_account::solana_program::program_pack::Pack;
+    use spl_associated_token_account::solana_program::{clock::Clock, program_pack::Pack};
 
     use crate::instructions::InitializeFundraiser;
 
@@ -123,12 +123,16 @@ mod tests {
             .send()
             .unwrap();
 
-        let amount_to_receive: u64 = 100_000_000; // 100 tokens with 6 decimal places
-        let amount_to_give: u64 = 400_000_000; // 500 tokens with 6 decimal places
+        let amount_to_raise: u64 = 100_000_000; // 100 tokens with 6 decimal places
+
+        let initial_clock = svm.get_sysvar::<Clock>();
+        let current_time = initial_clock.unix_timestamp;
+        let two_days_in_seconds = 2 * 24 * 60 * 60;
+        let duration: u64 = (current_time as u64) + (two_days_in_seconds as u64);
 
         let init_data_ix: InitializeFundraiser = InitializeFundraiser {
-            amount_to_raise: amount_to_give,
-            duration: amount_to_receive,
+            amount_to_raise: amount_to_raise,
+            duration,
         };
 
         let init_data_ser = init_data_ix.to_bytes();
@@ -164,7 +168,7 @@ mod tests {
         // Send the transaction and capture the result
         let tx = svm.send_transaction(transaction).unwrap();
         msg!("tx logs: {:#?}", tx.logs);
-        msg!("\n\nMake transaction sucessfull");
+        msg!("\nInit transaction sucessful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
 
         Ok(())
@@ -234,7 +238,7 @@ mod tests {
         // Send the transaction and capture the result
         let tx = svm.send_transaction(transaction).unwrap();
         msg!("tx logs: {:#?}", tx.logs);
-        msg!("\n\nMake transaction sucessfull");
+        msg!("\nContributor transaction sucessful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
 
         // [contributor, mint, fundraiser, vault, contributor_ata, contributor_pda, system_program, token_program, associated_token_program, rent_sysvar @ ..]
