@@ -1,7 +1,7 @@
 use pinocchio::{
     account_info::AccountInfo,
     instruction::{Seed, Signer},
-    sysvars::{self, clock::Clock, Sysvar},
+    sysvars::{clock::Clock, Sysvar},
     ProgramResult,
 };
 

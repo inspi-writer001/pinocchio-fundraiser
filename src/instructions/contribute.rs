@@ -1,10 +1,8 @@
-use bytemuck::{Pod, Zeroable};
-
 use pinocchio::{
     account_info::AccountInfo,
     instruction::{Seed, Signer},
-    pubkey::{self, find_program_address},
-    sysvars::{self, rent::Rent, Sysvar},
+    pubkey::find_program_address,
+    sysvars::{rent::Rent, Sysvar},
     ProgramResult,
 };
 

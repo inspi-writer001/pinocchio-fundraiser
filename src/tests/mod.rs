@@ -1,9 +1,7 @@
-use crate::state::Fundraiser;
-
 #[cfg(test)]
 mod tests {
 
-    use std::{io::Error, path::PathBuf};
+    use std::io::Error;
 
     use litesvm::LiteSVM;
     use litesvm_token::{
@@ -21,7 +19,7 @@ mod tests {
     use solana_pubkey::Pubkey;
     use solana_signer::Signer;
     use solana_transaction::Transaction;
-    use spl_associated_token_account::solana_program::{clock::Clock, program_pack::Pack};
+    use spl_associated_token_account::solana_program::clock::Clock;
 
     use crate::instructions::InitializeFundraiser;
 

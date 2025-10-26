@@ -3,13 +3,12 @@ use bytemuck::{Pod, Zeroable};
 use pinocchio::{
     account_info::AccountInfo,
     instruction::{Seed, Signer},
-    log, msg,
-    pubkey::{self, log},
+    pubkey::{self},
     sysvars::{self, rent::Rent, Sysvar},
     ProgramResult,
 };
 // use pinocchio_log::log;
-use pinocchio_pubkey::derive_address;
+
 use pinocchio_system::instructions::CreateAccount;
 
 use crate::state::Fundraiser;
@@ -28,7 +27,7 @@ impl InitializeFundraiser {
 }
 
 pub fn process_intialize_fundraiser(accounts: &[AccountInfo], data: &[u8]) -> ProgramResult {
-    let [maker, mint, fundraiser, vault, system_program, token_program, associated_token_program, rent_sysvar @ ..] =
+    let [maker, mint, fundraiser, vault, _system_program, _token_program, _associated_token_program, _rent_sysvar @ ..] =
         accounts
     else {
         return Err(pinocchio::program_error::ProgramError::NotEnoughAccountKeys);
