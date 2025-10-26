@@ -51,21 +51,21 @@ mod tests {
             .authority(&payer.pubkey())
             .send()
             .unwrap();
-        msg!("Mint A: {}", mint);
+        // msg!("Mint A: {}", mint);
 
         // Create the maker's associated token account for Mint A
         let maker_ata = CreateAssociatedTokenAccount::new(&mut svm, &payer, &mint)
             .owner(&payer.pubkey())
             .send()
             .unwrap();
-        msg!("Maker ATA A: {}\n", maker_ata);
+        // msg!("Maker ATA A: {}\n", maker_ata);
 
         // Derive the PDA for the escrow account using the maker's public key and a seed value
         let fundraiser = Pubkey::find_program_address(
             &[b"fundraiser".as_ref(), payer.pubkey().as_ref()],
             &PROGRAM_ID,
         );
-        msg!("Fundraiser PDA: {}\n", fundraiser.0);
+        // msg!("Fundraiser PDA: {}\n", fundraiser.0);
 
         // Derive the PDA for the vault associated token account using the escrow PDA and Mint A
         let vault = spl_associated_token_account::get_associated_token_address(
@@ -73,7 +73,7 @@ mod tests {
             &mint,         // mint
         );
 
-        msg!("Vault PDA: {}\n", vault);
+        // msg!("Vault PDA: {}\n", vault);
 
         // Define program IDs for associated token program, token program, and system program
         let asspciated_token_program = ASSOCIATED_TOKEN_PROGRAM_ID.parse::<Pubkey>().unwrap();
@@ -123,7 +123,7 @@ mod tests {
             .send()
             .unwrap();
 
-        let amount_to_raise: u64 = 100_000_000; // 100 tokens with 6 decimal places
+        let amount_to_raise: u64 = 30_000_000; // 100 tokens with 6 decimal places
 
         let initial_clock = svm.get_sysvar::<Clock>();
         let current_time = initial_clock.unix_timestamp;
@@ -143,7 +143,7 @@ mod tests {
         ]
         .concat();
 
-        msg!("here's the fundraiser from client: {}", fundraiser.0);
+        // msg!("here's the fundraiser from client: {}", fundraiser.0);
 
         let init_ix = Instruction {
             program_id: program_id(),
@@ -167,7 +167,7 @@ mod tests {
 
         // Send the transaction and capture the result
         let tx = svm.send_transaction(transaction).unwrap();
-        msg!("tx logs: {:#?}", tx.logs);
+        // msg!("tx logs: {:#?}", tx.logs);
         msg!("\nInit transaction sucessful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
 
@@ -193,7 +193,7 @@ mod tests {
             .owner(&contributor.pubkey())
             .send()
             .unwrap();
-        msg!("Contributor ATA A: {}\n", &contributor_ata);
+        // msg!("Contributor ATA A: {}\n", &contributor_ata);
 
         // pinocchio_token::state::TokenAccount::(&contributor_ata)?;
 
@@ -205,7 +205,7 @@ mod tests {
             &[b"contributor".as_ref(), contributor.pubkey().as_ref()],
             &PROGRAM_ID,
         );
-        msg!("Fundraiser PDA: {}\n", contributor_pda.0);
+        // msg!("Fundraiser PDA: {}\n", contributor_pda.0);
 
         let contribute_ix_data = [
             vec![crate::instructions::FundraisingInstructions::Contribute as u8],
@@ -237,11 +237,63 @@ mod tests {
 
         // Send the transaction and capture the result
         let tx = svm.send_transaction(transaction).unwrap();
-        msg!("tx logs: {:#?}", tx.logs);
+        // msg!("tx logs: {:#?}", tx.logs);
         msg!("\nContributor transaction sucessful");
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
 
         // [contributor, mint, fundraiser, vault, contributor_ata, contributor_pda, system_program, token_program, associated_token_program, rent_sysvar @ ..]
+        Ok(())
+    }
+
+    pub fn admin_withdraw(svm: &mut LiteSVM, state: &ReusableState) -> Result<(), Error> {
+        let mint = state.mint;
+        let payer = &state.maker;
+        let maker_ata = state.maker_ata;
+        let vault = state.vault;
+        let system_program = state.system_program;
+        let token_program = state.token_program;
+        let ata_program = state.ata_program;
+        let fundraiser = state.fundraiser;
+
+        let admin_withdraw_ix_data = [vec![
+            crate::instructions::FundraisingInstructions::CheckContributions as u8,
+        ]]
+        .concat();
+
+        let mut initial_clock = svm.get_sysvar::<Clock>();
+        let current_time = initial_clock.unix_timestamp;
+
+        // jump forward in time
+        let two_days_in_seconds = 2 * 24 * 60 * 60;
+        initial_clock.unix_timestamp = current_time + two_days_in_seconds;
+        svm.set_sysvar::<Clock>(&initial_clock);
+
+        let admin_withdraw_ix = Instruction {
+            program_id: program_id(),
+            accounts: vec![
+                AccountMeta::new(payer.pubkey(), true),
+                AccountMeta::new(mint, false),
+                AccountMeta::new(fundraiser.0, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new(maker_ata, false),
+                AccountMeta::new(system_program, false),
+                AccountMeta::new(token_program, false),
+                AccountMeta::new(ata_program, false),
+                AccountMeta::new(Rent::id(), false),
+            ],
+            data: admin_withdraw_ix_data,
+        };
+
+        let message = Message::new(&[admin_withdraw_ix], Some(&payer.pubkey()));
+        let recent_blockhash = svm.latest_blockhash();
+
+        let transaction = Transaction::new(&[&payer], message, recent_blockhash);
+
+        // Send the transaction and capture the result
+        let tx = svm.send_transaction(transaction).unwrap();
+        // msg!("tx logs: {:#?}", tx.logs);
+        msg!("\nAdmin Claim transaction sucessful");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
         Ok(())
     }
     #[test]
@@ -253,15 +305,15 @@ mod tests {
         assert_eq!(program_id, PROGRAM_ID);
         create_fundraiser(&mut svm, &state).unwrap();
 
-        let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
+        // let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
 
-        let maker_deserialized_ata =
-            bytemuck::try_from_bytes::<crate::state::Fundraiser>(&fundraiser_state.data).unwrap();
-        // spl_token::state::Account::unpack(fundraiser_state.data.as_slice()).unwrap();
-        msg!(
-            "new user token bump: {:#?}",
-            maker_deserialized_ata.amount_to_raise
-        );
+        // let maker_deserialized_ata =
+        //     bytemuck::try_from_bytes::<crate::state::Fundraiser>(&fundraiser_state.data).unwrap();
+        // // spl_token::state::Account::unpack(fundraiser_state.data.as_slice()).unwrap();
+        // msg!(
+        //     "new user token bump: {:#?}",
+        //     maker_deserialized_ata.amount_to_raise
+        // );
     }
 
     #[test]
@@ -276,19 +328,21 @@ mod tests {
         contribute(&mut svm, &state).unwrap(); // user 2 contributes
         contribute(&mut svm, &state).unwrap(); // user 3 contributes
 
-        let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
+        // let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
 
-        let maker_deserialized_ata =
-            bytemuck::try_from_bytes::<crate::state::Fundraiser>(&fundraiser_state.data).unwrap();
+        // let maker_deserialized_ata =
+        //     bytemuck::try_from_bytes::<crate::state::Fundraiser>(&fundraiser_state.data).unwrap();
 
-        let vault_in_program = svm.get_account(&state.vault).unwrap();
-        let vault_as_account =
-            litesvm_token::spl_token::state::Account::unpack(&vault_in_program.data).unwrap();
+        // let vault_in_program = svm.get_account(&state.vault).unwrap();
+        // let vault_as_account =
+        //     litesvm_token::spl_token::state::Account::unpack(&vault_in_program.data).unwrap();
 
-        msg!("new vault balance: {:#?}", vault_as_account.amount);
-        msg!(
-            "new user token bump: {:#?}",
-            maker_deserialized_ata.amount_to_raise
-        );
+        // msg!("new vault balance: {:#?}", vault_as_account.amount);
+        // msg!(
+        //     "new user token bump: {:#?}",
+        //     maker_deserialized_ata.amount_to_raise
+        // );
+
+        admin_withdraw(&mut svm, &state).unwrap();
     }
 }

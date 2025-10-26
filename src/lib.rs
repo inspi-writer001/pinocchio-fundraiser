@@ -6,6 +6,8 @@ mod instructions;
 mod state;
 mod tests;
 
+// vault_state, fundraiser_state
+
 entrypoint!(process_instruction);
 
 pinocchio_pubkey::declare_id!("27abzM8KfWuiYyiy6T3Dv1EeJWSPuBK7DDjtBQoapEfP");
@@ -23,13 +25,13 @@ pub fn process_instruction(
 
     match FundraisingInstructions::try_from(discriminator)? {
         FundraisingInstructions::Initialize => {
-            pinocchio_log::log!("got to entry");
             instructions::process_intialize_fundraiser(accounts, data)?
         }
         FundraisingInstructions::Contribute => instructions::process_contribute(accounts, data)?,
-        // FundraisingInstructions::CheckContributions => {}
-        // FundraisingInstructions::Refund => {}
-        // FundraisingInstructions::MakeV2 => instructions::process_make_instruction_v2(accounts, data)?,
+        FundraisingInstructions::CheckContributions => {
+            instructions::admin_claim(accounts, data)?;
+            // instructions::transfer_tokens(accounts, data)?
+        }
         _ => return Err(pinocchio::program_error::ProgramError::InvalidInstructionData),
     }
     Ok(())
