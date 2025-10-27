@@ -137,6 +137,8 @@ pub fn process_contribute(accounts: &[AccountInfo], data: &[u8]) -> ProgramResul
         }
         .invoke()?;
 
+        // increase current amount in pda.... redundant since we can just check the vault balance
+
         // increase contributor amount by how much was deposited
         derived_contributor_pda_state.amount =
             (u64::from_le_bytes(derived_contributor_pda_state.amount)

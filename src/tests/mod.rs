@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
 
+    use rand::Rng;
     use std::io::Error;
 
     use litesvm::LiteSVM;
@@ -9,7 +10,7 @@ mod tests {
             self,
             solana_program::{msg, rent::Rent, sysvar::SysvarId},
         },
-        CreateAssociatedTokenAccount, CreateMint, MintTo,
+        CreateAssociatedTokenAccount, CreateAssociatedTokenAccountIdempotent, CreateMint, MintTo,
     };
 
     use solana_instruction::{AccountMeta, Instruction};
@@ -20,6 +21,7 @@ mod tests {
     use solana_signer::Signer;
     use solana_transaction::Transaction;
     use spl_associated_token_account::solana_program::clock::Clock;
+    use spl_associated_token_account::solana_program::program_pack::Pack;
 
     use crate::instructions::InitializeFundraiser;
 
@@ -87,6 +89,9 @@ mod tests {
             maker: payer,
             maker_ata,
             fundraiser,
+            user: None,
+            user_ata: None,
+            user_pda: None,
         };
         (svm, reusable_state)
     }
@@ -100,6 +105,9 @@ mod tests {
         pub system_program: Pubkey,
         pub fundraiser: (Pubkey, u8),
         pub maker: Keypair,
+        pub user: Option<Keypair>,
+        pub user_ata: Option<Pubkey>,
+        pub user_pda: Option<(Pubkey, u8)>,
     }
 
     pub fn create_fundraiser(svm: &mut LiteSVM, state: &ReusableState) -> Result<(), Error> {
@@ -243,6 +251,114 @@ mod tests {
         Ok(())
     }
 
+    pub fn contribute_with_specified_user(
+        svm: &mut LiteSVM,
+        state: &mut ReusableState,
+        contributor: &Keypair,
+        amount: u64,
+    ) -> Result<(), Error> {
+        let mint = state.mint;
+        let payer = &state.maker;
+        // let maker_ata = state.maker_ata;
+        let vault = state.vault;
+        let system_program = state.system_program;
+        let token_program = state.token_program;
+        let ata_program = state.ata_program;
+        let fundraiser = state.fundraiser;
+
+        // let contributor = Keypair::new();
+
+        // let contributor_ata = CreateAssociatedTokenAccountIdempotent::new(svm, &contributor, &mint)
+        //     .owner(&contributor.pubkey())
+        //     .send()
+        //     .unwrap();
+        // msg!("Contributor ATA A: {}\n", &contributor_ata);
+
+        let contributor_ata = spl_associated_token_account::get_associated_token_address(
+            &contributor.pubkey(),
+            &mint,
+        );
+
+        // Only send the create transaction if the account doesn't exist
+        if svm.get_account(&contributor_ata).is_none() {
+            CreateAssociatedTokenAccountIdempotent::new(svm, &contributor, &mint)
+                .owner(&contributor.pubkey())
+                .send()
+                .unwrap();
+            msg!("Created Contributor ATA: {}\n", &contributor_ata);
+        } else {
+            msg!("Contributor ATA already exists: {}\n", &contributor_ata);
+        }
+
+        // pinocchio_token::state::TokenAccount::(&contributor_ata)?;
+
+        // Get the token account and check balance
+        let account = svm.get_account(&contributor_ata).unwrap();
+        let token_account =
+            litesvm_token::spl_token::state::Account::unpack(&account.data.as_slice()).unwrap();
+
+        if token_account.amount == 0 {
+            MintTo::new(svm, &payer, &mint, &contributor_ata, 1_000_000_000 + amount)
+                .send()
+                .unwrap();
+            msg!("Minted {} tokens", 1_000_000_000 + amount);
+        } else {
+            msg!(
+                "User already has {} tokens, skipping mint",
+                token_account.amount
+            );
+        }
+
+        let contributor_pda = Pubkey::find_program_address(
+            &[b"contributor".as_ref(), contributor.pubkey().as_ref()],
+            &PROGRAM_ID,
+        );
+
+        // msg!("Fundraiser PDA: {}\n", contributor_pda.0);
+
+        let contribute_ix_data = [
+            vec![crate::instructions::FundraisingInstructions::Contribute as u8], // Discriminator for "Make" instruction
+            amount.to_le_bytes().to_vec(),
+        ]
+        .concat();
+
+        let contribute_ix = Instruction {
+            program_id: program_id(),
+            accounts: vec![
+                AccountMeta::new(contributor.pubkey(), true),
+                AccountMeta::new(mint, false),
+                AccountMeta::new(fundraiser.0, false),
+                AccountMeta::new(vault, false),
+                AccountMeta::new(contributor_ata, false),
+                AccountMeta::new(contributor_pda.0, false),
+                AccountMeta::new(system_program, false),
+                AccountMeta::new(token_program, false),
+                AccountMeta::new(ata_program, false),
+                AccountMeta::new(Rent::id(), false),
+            ],
+            data: contribute_ix_data,
+        };
+
+        let message = Message::new(&[contribute_ix], Some(&contributor.pubkey()));
+        let recent_blockhash = svm.latest_blockhash();
+
+        let transaction = Transaction::new(&[&contributor], message, recent_blockhash);
+
+        // Send the transaction and capture the result
+        let tx = svm.send_transaction(transaction).unwrap();
+
+        let new_contributor = contributor.insecure_clone();
+        state.user_ata = Some(contributor_ata);
+        state.user = Some(new_contributor);
+        state.user_pda = Some(contributor_pda);
+        // msg!("tx logs: {:#?}", tx.logs);
+        msg!("\nContributor transaction sucessful");
+        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+
+        // [contributor, mint, fundraiser, vault, contributor_ata, contributor_pda, system_program, token_program, associated_token_program, rent_sysvar @ ..]
+        Ok(())
+    }
+
     pub fn admin_withdraw(svm: &mut LiteSVM, state: &ReusableState) -> Result<(), Error> {
         let mint = state.mint;
         let payer = &state.maker;
@@ -294,6 +410,66 @@ mod tests {
         msg!("CUs Consumed: {}", tx.compute_units_consumed);
         Ok(())
     }
+
+    pub fn user_refund(svm: &mut LiteSVM, state: &ReusableState) -> Result<(), Error> {
+        let mint = state.mint;
+        let payer = &state.maker;
+        let vault = state.vault;
+        let system_program = state.system_program;
+        let token_program = state.token_program;
+        let ata_program = state.ata_program;
+        let fundraiser = state.fundraiser;
+        let user = state.user.as_ref().map(|exists| exists);
+        let user_ata = state.user_ata.map(|exists| exists);
+
+        let user_refund_ix_data =
+            vec![[crate::instructions::FundraisingInstructions::Refund as u8]].concat();
+
+        match user {
+            Some(user) => {
+                match user_ata {
+                    Some(user_ata) => {
+                        let contributor_pda = Pubkey::find_program_address(
+                            &[b"contributor".as_ref(), user.pubkey().as_ref()],
+                            &PROGRAM_ID,
+                        );
+                        let user_refund_ix = Instruction {
+                            program_id: program_id(),
+                            accounts: vec![
+                                AccountMeta::new(user.pubkey(), true),
+                                AccountMeta::new(payer.pubkey(), false), // maker
+                                AccountMeta::new(mint, false),
+                                AccountMeta::new(fundraiser.0, false),
+                                AccountMeta::new(vault, false),
+                                AccountMeta::new(user_ata, false),
+                                AccountMeta::new(contributor_pda.0, false),
+                                AccountMeta::new(system_program, false),
+                                AccountMeta::new(token_program, false),
+                                AccountMeta::new(ata_program, false),
+                                AccountMeta::new(Rent::id(), false),
+                            ],
+                            data: user_refund_ix_data,
+                        };
+
+                        let message = Message::new(&[user_refund_ix], Some(&user.pubkey()));
+                        let recent_blockhash = svm.latest_blockhash();
+
+                        let transaction = Transaction::new(&[&user], message, recent_blockhash);
+
+                        // Send the transaction and capture the result
+                        let tx = svm.send_transaction(transaction).unwrap();
+                        // msg!("tx logs: {:#?}", tx.logs);
+                        msg!("\nUser refund transaction sucessful");
+                        msg!("CUs Consumed: {}", tx.compute_units_consumed);
+                        Ok(())
+                    }
+                    None => panic!("User Ata should exist for this scope of test"),
+                }
+            }
+            None => panic!("User should exist for this scope of test"),
+        }
+    }
+
     #[test]
     pub fn test_init_instruction() {
         let (mut svm, state) = setup();
@@ -316,7 +492,7 @@ mod tests {
 
     #[test]
     pub fn test_contribute_instruction() {
-        let (mut svm, state) = setup();
+        let (mut svm, mut state) = setup();
 
         let program_id = program_id();
 
@@ -326,6 +502,22 @@ mod tests {
         contribute(&mut svm, &state).unwrap(); // user 2 contributes
         contribute(&mut svm, &state).unwrap(); // user 3 contributes
 
+        let contributor = Keypair::new();
+        svm.airdrop(&contributor.pubkey(), 4 * LAMPORTS_PER_SOL)
+            .expect("Airdrop failed");
+
+        contribute_with_specified_user(&mut svm, &mut state, &contributor, 10_000_000).unwrap();
+        contribute_with_specified_user(&mut svm, &mut state, &contributor, 12_000_000).unwrap();
+
+        // travel to the future
+        let mut initial_clock = svm.get_sysvar::<Clock>();
+        let current_time = initial_clock.unix_timestamp;
+
+        // jump forward in time to test the threshold failed
+        let two_days_in_seconds = 2 * 24 * 60 * 60;
+        initial_clock.unix_timestamp = current_time + two_days_in_seconds;
+        svm.set_sysvar::<Clock>(&initial_clock);
+
         // let fundraiser_state = svm.get_account(&state.fundraiser.0).unwrap();
 
         // let maker_deserialized_ata =
@@ -333,13 +525,14 @@ mod tests {
 
         // let vault_in_program = svm.get_account(&state.vault).unwrap();
         // let vault_as_account =
-        //     litesvm_token::spl_token::state::Account::unpack(&vault_in_program.data).unwrap();
+        // litesvm_token::spl_token::state::Account::unpack(&vault_in_program.data).unwrap();
 
         // msg!("new vault balance: {:#?}", vault_as_account.amount);
         // msg!(
         //     "new user token bump: {:#?}",
         //     maker_deserialized_ata.amount_to_raise
         // );
+        user_refund(&mut svm, &state).unwrap();
 
         admin_withdraw(&mut svm, &state).unwrap();
     }

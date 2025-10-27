@@ -32,6 +32,9 @@ pub fn process_instruction(
             instructions::admin_claim(accounts, data)?;
             // instructions::transfer_tokens(accounts, data)?
         }
+        FundraisingInstructions::Refund => {
+            instructions::process_refund(accounts, data)?;
+        }
         _ => return Err(pinocchio::program_error::ProgramError::InvalidInstructionData),
     }
     Ok(())
